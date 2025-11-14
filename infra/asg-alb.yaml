@@ -1,0 +1,61 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Skeleton CloudFormation template to create an ALB + AutoScalingGroup. Review and customize before deploying.'
+
+Parameters:
+  KeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: Name of an existing EC2 KeyPair to enable SSH access to instances
+  InstanceType:
+    Type: String
+    Default: t3.micro
+  DesiredCapacity:
+    Type: Number
+    Default: 1
+
+Resources:
+  # Note: This is a skeleton. You must review and customize AMI, subnets, and security groups before use.
+  LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateData:
+        InstanceType: !Ref InstanceType
+        KeyName: !Ref KeyName
+        ImageId: ami-0123456789abcdef0 # <-- REPLACE with a valid AMI for your region
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash -xe
+            yum update -y
+            amazon-linux-extras install docker -y || yum install -y docker
+            service docker start
+            usermod -a -G docker ec2-user
+            cd /home/ec2-user
+            # Pull your app or use userdata to clone repo and run docker
+
+  MyAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      LaunchTemplate:
+        LaunchTemplateId: !Ref LaunchTemplate
+        Version: !GetAtt LaunchTemplate.LatestVersionNumber
+      MinSize: 1
+      MaxSize: 3
+      DesiredCapacity: !Ref DesiredCapacity
+      VPCZoneIdentifier: [] # <-- Add subnet IDs
+
+  MyLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Subnets: [] # <-- Add subnet IDs
+      SecurityGroups: [] # <-- Add security group IDs
+
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Port: 5000
+      Protocol: HTTP
+      VpcId: "" # <-- VPC ID
+
+Outputs:
+  Note:
+    Description: 'This is a skeleton template. Populate parameters and resource properties before using.'
+    Value: 'Edit infra/asg-alb.yaml to specify subnets, AMI, and VPC values then deploy with CloudFormation.'
