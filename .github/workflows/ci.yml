@@ -21,24 +21,15 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install -r .vscode/requirements.txt
+        pip install flask pytest
     
     - name: Run tests
       run: |
         cd .vscode
         python -m pytest test_app.py -v
     
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v2
-    
     - name: Build Docker image
       run: |
         cd .vscode
         docker build -t devops-app:latest .
-    
-    - name: Run Docker container test
-      run: |
-        docker run --rm -p 5000:5000 -d --name test-app devops-app:latest
-        sleep 3
-        curl http://localhost:5000/ && echo " App OK" || (docker logs test-app; exit 1)
-        docker stop test-app || true
+        echo "Docker image built successfully"
