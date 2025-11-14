@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r .vscode/requirements.txt
+    
+    - name: Run tests
+      run: |
+        cd .vscode
+        python -m pytest -v
+    
+    - name: Build Docker image
+      run: |
+        cd .vscode
+        docker build -t devops-app:${{ github.sha }} .
+    
+    - name: Run Docker container test
+      run: |
+        docker run --rm -p 5000:5000 -d --name test-app devops-app:${{ github.sha }}
+        sleep 2
+        curl -f http://localhost:5000/ || exit 1
+        docker stop test-app
