@@ -1,0 +1,56 @@
+name: CD — Deploy to EC2
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Deploy to EC2 over SSH
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Create archive of repository
+        run: |
+          tar -czf repo.tar.gz .
+
+      - name: Install SSH client
+        run: sudo apt-get update; sudo apt-get install -y openssh-client rsync
+
+      - name: Start ssh-agent and add private key
+        uses: webfactory/ssh-agent@v0.8.1
+        with:
+          ssh-private-key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+
+      - name: Ensure known_hosts contains EC2 host key
+        run: |
+          mkdir -p ~/.ssh
+          if [ -n "${{ secrets.EC2_KNOWN_HOSTS }}" ]; then
+            echo "${{ secrets.EC2_KNOWN_HOSTS }}" >> ~/.ssh/known_hosts
+          else
+            ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
+          fi
+
+      - name: Copy archive to EC2
+        run: |
+          scp -o StrictHostKeyChecking=no repo.tar.gz ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:~/repo.tar.gz
+
+      - name: Extract and run remote deploy on EC2
+        env:
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+        run: |
+          ssh -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "mkdir -p \"$DEPLOY_PATH\" && tar -xzf ~/repo.tar.gz -C \"$DEPLOY_PATH\" && bash \"$DEPLOY_PATH/infra/deploy/remote-deploy.sh\" \"$DEPLOY_PATH\""
+
+      - name: Cleanup
+        run: rm -f repo.tar.gz
+
+# Secrets required for this workflow:
+# - EC2_SSH_PRIVATE_KEY : the private SSH key for the deploy user (RSA or ed25519)
+# - EC2_HOST            : IP or hostname of target EC2 instance
+# - EC2_USER            : SSH username (e.g., ec2-user, ubuntu)
+# - DEPLOY_PATH         : remote directory where the repository will be extracted (e.g., /home/ubuntu/app)
+# Optional:
+# - EC2_KNOWN_HOSTS     : pre-filled known_hosts entry (if you don't want ssh-keyscan at runtime)
