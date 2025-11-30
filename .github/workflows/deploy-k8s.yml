@@ -1,0 +1,111 @@
+name: Deploy to Kubernetes
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+
+jobs:
+  deploy-k8s:
+    name: Deploy to Kubernetes Cluster
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          file: .vscode/Dockerfile
+          push: false
+          tags: devops-app:${{ github.sha }}
+          load: true
+
+      - name: Configure AWS credentials (for EKS)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Tag and push image to ECR
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: devops-app
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker tag devops-app:${{ github.sha }} $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker tag devops-app:${{ github.sha }} $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+
+      - name: Update kubeconfig for EKS
+        run: |
+          aws eks update-kubeconfig --region ${{ secrets.AWS_REGION }} --name ${{ secrets.EKS_CLUSTER_NAME }}
+
+      - name: Deploy to Kubernetes
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          # Create namespace if doesn't exist
+          kubectl apply -f k8s/namespace.yaml
+          
+          # Apply ConfigMap
+          kubectl apply -f k8s/configmap.yaml -n devops-project
+          
+          # Update deployment with new image
+          sed -i "s|image: devops-app:latest|image: $ECR_REGISTRY/devops-app:$IMAGE_TAG|g" k8s/deployment.yaml
+          kubectl apply -f k8s/deployment.yaml -n devops-project
+          
+          # Apply Service
+          kubectl apply -f k8s/service.yaml -n devops-project
+          
+          # Optional: Apply Ingress
+          # kubectl apply -f k8s/ingress.yaml -n devops-project
+
+      - name: Wait for deployment rollout
+        run: |
+          kubectl rollout status deployment/devops-app -n devops-project --timeout=5m
+
+      - name: Verify deployment
+        run: |
+          echo "Deployment status:"
+          kubectl get deployment devops-app -n devops-project
+          
+          echo "Pods:"
+          kubectl get pods -l app=devops-app -n devops-project
+          
+          echo "Service:"
+          kubectl get svc devops-app-service -n devops-project
+
+      - name: Get service endpoint
+        run: |
+          echo "Application endpoint:"
+          kubectl get svc devops-app-service -n devops-project -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' || echo "LoadBalancer provisioning..."
+
+# Required Secrets:
+# - AWS_ACCESS_KEY_ID      : AWS access key for ECR and EKS
+# - AWS_SECRET_ACCESS_KEY  : AWS secret key
+# - AWS_REGION             : AWS region (e.g., eu-west-2)
+# - EKS_CLUSTER_NAME       : Name of your EKS cluster
+
+# Prerequisites:
+# 1. Create ECR repository: aws ecr create-repository --repository-name devops-app
+# 2. Create EKS cluster: eksctl create cluster --name devops-cluster --region eu-west-2
+# 3. Add GitHub secrets listed above
