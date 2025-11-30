@@ -1,0 +1,60 @@
+.status {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 20px;
+  margin-bottom: 30px;
+}
+
+.status-card {
+  padding: 20px;
+  border-radius: 8px;
+  text-align: center;
+  color: white;
+  transition: transform 0.3s;
+}
+
+.status-card:hover {
+  transform: translateY(-5px);
+}
+
+.status-card.api.connected {
+  background: #48bb78;
+}
+
+.status-card.db.connected {
+  background: #4299e1;
+}
+
+.status-card.cache.connected {
+  background: #ed8936;
+}
+
+.status-card.checking {
+  background: #a0aec0;
+}
+
+.status-card.error {
+  background: #f56565;
+}
+
+.status-icon {
+  font-size: 2em;
+  margin-bottom: 10px;
+}
+
+.status-label {
+  font-size: 0.9em;
+  opacity: 0.9;
+  margin-bottom: 5px;
+}
+
+.status-value {
+  font-size: 1.1em;
+  font-weight: bold;
+}
+
+@media (max-width: 768px) {
+  .status {
+    grid-template-columns: 1fr;
+  }
+}

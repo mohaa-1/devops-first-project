@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Microservices Task Manager</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+        .header {
+            background: #5a67d8;
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        .header h1 {
+            font-size: 2em;
+            margin-bottom: 10px;
+        }
+        .header p {
+            opacity: 0.9;
+        }
+        .content {
+            padding: 30px;
+        }
+        .status {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .status-card {
+            flex: 1;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .status-card.api {
+            background: #48bb78;
+            color: white;
+        }
+        .status-card.db {
+            background: #4299e1;
+            color: white;
+        }
+        .add-task {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        .add-task input {
+            flex: 1;
+            padding: 12px;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 16px;
+        }
+        .add-task button {
+            padding: 12px 30px;
+            background: #5a67d8;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+        .add-task button:hover {
+            background: #4c51bf;
+        }
+        .tasks {
+            list-style: none;
+        }
+        .task {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            padding: 15px;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            transition: all 0.3s;
+        }
+        .task:hover {
+            border-color: #cbd5e0;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .task.completed {
+            opacity: 0.6;
+            background: #f7fafc;
+        }
+        .task input[type="checkbox"] {
+            width: 20px;
+            height: 20px;
+            cursor: pointer;
+        }
+        .task-title {
+            flex: 1;
+            font-size: 16px;
+        }
+        .task.completed .task-title {
+            text-decoration: line-through;
+        }
+        .task-delete {
+            padding: 8px 16px;
+            background: #fc8181;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+        .task-delete:hover {
+            background: #f56565;
+        }
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #a0aec0;
+        }
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #718096;
+        }
+        .error {
+            background: #fed7d7;
+            color: #c53030;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚀 Microservices Task Manager</h1>
+            <p>Built with Flask Backend + PostgreSQL + Kubernetes</p>
+        </div>
+        <div class="content">
+            <div class="status">
+                <div class="status-card api">
+                    <div>API Status</div>
+                    <div id="api-status">Checking...</div>
+                </div>
+                <div class="status-card db">
+                    <div>Database Status</div>
+                    <div id="db-status">Checking...</div>
+                </div>
+            </div>
+            
+            <div id="error-message" class="error" style="display:none;"></div>
+            
+            <div class="add-task">
+                <input type="text" id="task-input" placeholder="Enter a new task..." />
+                <button onclick="addTask()">Add Task</button>
+            </div>
+            
+            <ul class="tasks" id="tasks-list">
+                <li class="loading">Loading tasks...</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = window.location.hostname === 'localhost' 
+            ? 'http://localhost:5000'
+            : 'http://backend-service';
+
+        async function checkHealth() {
+            try {
+                const response = await fetch(`${API_URL}/health`);
+                const data = await response.json();
+                document.getElementById('api-status').textContent = '✓ Connected';
+                document.getElementById('db-status').textContent = 
+                    data.database === 'connected' ? '✓ Connected' : '✗ Error';
+            } catch (error) {
+                document.getElementById('api-status').textContent = '✗ Error';
+                document.getElementById('db-status').textContent = '✗ Error';
+                showError('Cannot connect to backend API');
+            }
+        }
+
+        async function loadTasks() {
+            try {
+                const response = await fetch(`${API_URL}/api/tasks`);
+                const tasks = await response.json();
+                
+                const tasksList = document.getElementById('tasks-list');
+                if (tasks.length === 0) {
+                    tasksList.innerHTML = '<li class="empty-state">No tasks yet. Add one above!</li>';
+                    return;
+                }
+                
+                tasksList.innerHTML = tasks.map(task => `
+                    <li class="task ${task.completed ? 'completed' : ''}">
+                        <input type="checkbox" ${task.completed ? 'checked' : ''} 
+                               onchange="toggleTask(${task.id}, this.checked)" />
+                        <span class="task-title">${task.title}</span>
+                        <button class="task-delete" onclick="deleteTask(${task.id})">Delete</button>
+                    </li>
+                `).join('');
+            } catch (error) {
+                showError('Failed to load tasks: ' + error.message);
+            }
+        }
+
+        async function addTask() {
+            const input = document.getElementById('task-input');
+            const title = input.value.trim();
+            
+            if (!title) return;
+            
+            try {
+                const response = await fetch(`${API_URL}/api/tasks`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ title })
+                });
+                
+                if (response.ok) {
+                    input.value = '';
+                    loadTasks();
+                }
+            } catch (error) {
+                showError('Failed to add task: ' + error.message);
+            }
+        }
+
+        async function toggleTask(id, completed) {
+            try {
+                await fetch(`${API_URL}/api/tasks/${id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ completed })
+                });
+                loadTasks();
+            } catch (error) {
+                showError('Failed to update task: ' + error.message);
+            }
+        }
+
+        async function deleteTask(id) {
+            try {
+                await fetch(`${API_URL}/api/tasks/${id}`, {
+                    method: 'DELETE'
+                });
+                loadTasks();
+            } catch (error) {
+                showError('Failed to delete task: ' + error.message);
+            }
+        }
+
+        function showError(message) {
+            const errorDiv = document.getElementById('error-message');
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+            setTimeout(() => errorDiv.style.display = 'none', 5000);
+        }
+
+        // Allow Enter key to add task
+        document.getElementById('task-input').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') addTask();
+        });
+
+        // Initialize
+        checkHealth();
+        loadTasks();
+        setInterval(checkHealth, 30000); // Check health every 30s
+    </script>
+</body>
+</html>
